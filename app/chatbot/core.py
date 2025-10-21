@@ -2,7 +2,8 @@ import os
 import traceback
 from dotenv import load_dotenv
 from pinecone import Pinecone
-from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains import RetrievalQA
@@ -41,13 +42,17 @@ try:
     )
     print("[Core Init 1/4] Groq LLM initialized.")
 
-    # 2. Initialize Embeddings Model
-    print("[Core Init 2/4] Loading embedding model (all-MiniLM-L6-v2)...")
-    embeddings_model = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2",
-        model_kwargs={'device': 'cpu'}
+# 2. Initialize the "Converter" (Cohere Embeddings API)
+    print("[Core Init Step 2/4] Initializing Cohere Embeddings...")
+    cohere_api_key = os.environ.get("COHERE_API_KEY")
+    if not cohere_api_key:
+        raise ValueError("COHERE_API_KEY not found in environment. Add it to .env or Vercel vars.")
+    # Use a Cohere embedding model (e.g., 'embed-english-v3.0')
+    embeddings_model = CohereEmbeddings( # <-- MUST BE CohereEmbeddings
+        cohere_api_key=cohere_api_key,
+        model="embed-english-v3.0" # Or your chosen Cohere model
     )
-    print("[Core Init 2/4] Embedding model loaded.")
+    print("[Core Init Step 2/4] Cohere Embeddings initialized.")
 
     # 3. Initialize Pinecone Connection
     print("[Core Init 3/4] Connecting to Pinecone...")
@@ -72,19 +77,21 @@ try:
     # 4. Setup Prompt and QA Chain
     print("[Core Init 4/4] Setting up Prompt Template and QA Chain...")
 
-   # Define a specific prompt template
+# Define a specific prompt template with Markdown instructions
     prompt_template = """You are an expert student counselor AI assistant for FLCS Consultancy, specializing ONLY in helping students study in Italy. Your knowledge comes *exclusively* from the official FLCS documents provided below in the 'Context' section.
 
     **Special Instructions for Greetings/Simple Interactions:**
-    - If the user's input is a simple greeting (like "hi", "hello", "hey"), a simple closing (like "thanks", "bye"), or a very basic question not related to studying in Italy, provide a brief, polite, standard conversational response (e.g., "Hello! How can I help you regarding studying in Italy?", "You're welcome!", "Goodbye!").
-    - **Do NOT** search the context or provide detailed consultancy information for simple greetings or unrelated questions.
+    - If the user's input is a simple greeting, closing, or unrelated question, provide a brief, polite, standard conversational response (e.g., "Hello! How can I help you regarding studying in Italy?"). Do NOT search the context for these.
 
     **Instructions for Genuine Queries about Studying in Italy:**
     1.  Carefully analyze the user's 'Question'.
     2.  Base your *entire* answer *only* on the relevant text provided in the 'Context' section below.
-    3.  If the context contains the answer, synthesize a helpful and concise response.
-    4.  **Formatting:** Use bullet points (-) or numbered lists (1., 2.) if the information involves steps, lists of items (like documents), or multiple distinct points. Ensure paragraphs are used for explanations.
-    5.  If the context does *not* contain the answer to the question, *clearly* state: "Based on the provided FLCS documents, I don't have specific information about that topic."
+    3.  If the context contains the answer, synthesize a helpful, comprehensive, and well-structured response.
+    4.  **Formatting:**
+        * **Use Markdown:** Employ standard Markdown for formatting (bolding `**like this**`, bullet points using `-` or `*`, numbered lists using `1.`, `2.`).
+        * **Structure:** Break down information into logical paragraphs. Use bullet points or numbered lists for steps, requirements, or lists of items.
+        * **Clarity:** Ensure the answer is easy to read and understand.
+    5.  If the context does *not* contain the answer, *clearly* state: "Based on the provided FLCS documents, I don't have specific information about that topic."
     6.  Do NOT use any prior knowledge or information from outside the provided context. Do NOT make up answers.
     7.  Maintain the helpful and professional persona of an FLCS counselor.
 
@@ -93,8 +100,8 @@ try:
 
     Question: {question}
 
-    Helpful Answer (based *only* on FLCS documents provided, unless it's a simple greeting):"""
-    
+    Helpful Answer (using Markdown formatting based *only* on FLCS documents provided, unless it's a simple greeting):"""
+
     QA_CHAIN_PROMPT = PromptTemplate(
         input_variables=["context", "question"],
         template=prompt_template,
